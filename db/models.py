@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, Text
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy.types as types
 
@@ -49,4 +49,5 @@ class IPCorrelation(Base):
     local_ip = Column(ForeignKey('local_ip.id'))
     remote_ip = Column(String(16))
     treatment = Column(ChoiceType(TREATMENT_CHOICES), nullable=False, default=NO_DECISION)
+    remote_ip = Column(Text())
 
