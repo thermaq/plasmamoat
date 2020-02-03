@@ -10,16 +10,16 @@ BLOCK=2
 UNBLOCK=3
 
 TREATMENT_CHOICES = {
-    NO_DECISION: NO_DECISION,
-    IGNORE: IGNORE,
-    BLOCK: BLOCK,
-    UNBLOCK: UNBLOCK
+    NO_DECISION: "NO_DECISION",
+    IGNORE: "IGNORE",
+    BLOCK: "BLOCK",
+    UNBLOCK: "UNBLOCK"
 }
 
 DEFAULT_TREATMENT_CHOICES = {
-    BLOCK: BLOCK,
-    IGNORE: IGNORE,
-    UNBLOCK: UNBLOCK
+    BLOCK: "BLOCK",
+    IGNORE: "IGNORE",
+    UNBLOCK: "UNBLOCK"
 }
 
 class ChoiceType(types.TypeDecorator):
@@ -49,5 +49,5 @@ class IPCorrelation(Base):
     local_ip = Column(ForeignKey('local_ip.id'))
     remote_ip = Column(String(16))
     treatment = Column(ChoiceType(TREATMENT_CHOICES), nullable=False, default=NO_DECISION)
-    remote_ip = Column(Text())
+    whois = Column(Text())
 
