@@ -6,7 +6,7 @@ import threading
 import sys
 
 
-DEVICE='enp2s0'
+DEVICE='eth1'
 
 
 def sniff(ip, stopper):
