@@ -14,39 +14,39 @@ CHAIN = 'PLASMA-ISOLATION_STAGE'
 
 @dataclass
 class Rule:
-    from: str = None
-    policy: int = None
-    to: str = None
+    from_t:str = None
+    policy:int = None
+    to:str = None
     original_rule:str = None
     chain_definition:bool = False
-    chain_forward:str = None
+    chain_forward:bool = False
 
     def to_rule_deletion(self):
         if self.chain_forward:
             return f'-D FORWARD -g {CHAIN}'
         if self.chain_definition:
-            return f'-D {CHAIN}'
+            return f'-X {CHAIN}'
         if self.original_rule:
             return '-D' + self.original_rule[2:]
         return
 
     def to_rule_append(self):
-        if self.chain_definition_rule:
+        if self.chain_definition:
             return f"-N {CHAIN}"
-        elif self.chain_forward_rule:
+        elif self.chain_forward:
             return f"-A FORWARD -g {CHAIN}"
-        elif not self.from:
-            return f"-A -d {self.to} -j {self.policy}"
+        elif not self.from_t:
+            return f"-A {CHAIN} -d {self.to} -j {self.policy}"
         elif not self.to:
-            return f"-A -s {self.from} -j {self.policy}"
+            return f"-A {CHAIN} -s {self.from_t} -j {self.policy}"
         else:
-            return f"-I {CHAIN} -s {self.from} -d {self.to} -j {self.policy}"
+            return f"-I {CHAIN} -s {self.from_t} -d {self.to} -j {self.policy}"
 
     @staticmethod
     def from_iptable_rule(rule):
-        policy = tp = from = None
-        chain = None
-        chain_definition = chain_forward = True
+        policy = tp = from_t = None
+        to = chain = None
+        chain_definition = chain_forward = False
         for option in rule.split(' -'):
             ss = option.split(' ')
             if ss[0] == '-A':
@@ -59,7 +59,7 @@ class Rule:
             elif ss[0] == 'd':
                 to = ss[1]
             elif ss[0] == 's':
-                from = ss[1]
+                from_t = ss[1]
             elif ss[0] == 'j':
                 policy = ss[1]
         if chain != CHAIN and not chain_definition and not chain_forward:
@@ -68,9 +68,9 @@ class Rule:
             original_rule=rule,
             policy=policy,
             to=to,
-            from=from,
+            from_t=from_t,
             chain_definition=chain_definition,
-            chain_forward=True
+            chain_forward=chain_forward
         )
 
     @staticmethod
@@ -88,38 +88,37 @@ class Rule:
 
         if not rule:
             return Rule(
-                from=local_ip.ip,
+                from_t=local_ip.ip+'/32',
                 to=None,
                 policy=policy,
                 original_rule=None
             ), Rule(
-                to=local_ip.ip,
-                from=None,
+                to=local_ip.ip+'/32',
+                from_t=None,
                 policy=policy,
                 original_rule=None
             )
         else:
-            policy = rule.treatment
             return Rule(
-                from=local_ip.ip,
-                to=rule.remote_ip,
+                from_t=local_ip.ip+'/32',
+                to=rule.remote_ip+'/32',
                 policy=policy,
                 original_rule=None
             ), Rule(
-                to=local_ip.ip,
-                from=rule.remote_ip,
+                to=local_ip.ip+'/32',
+                from_t=rule.remote_ip+'/32',
                 policy=policy,
                 original_rule=None
             )
+
     def key(self):
-        return '|'.join(
-        from: str
+        return '|'.join([
+            str(self.from_t),
             str(self.policy),
             str(self.to),
-            str(self.original_rule),
             str(self.chain_definition),
             str(self.chain_forward)
-        )
+        ])
 
 
 async def main():
@@ -131,16 +130,17 @@ async def main():
         current_rules = {}
         for r in stdout.decode('utf-8').split('\n'):
             rule = Rule.from_iptable_rule(r)
-            current_rules[rule.key()] = rule
+            if rule:
+                current_rules[rule.key()] = rule
         # get database rules
         wanted_rules = [
             Rule(chain_definition=True),
             Rule(chain_forward=True)
         ]
         for policy_rule in session.query(LocalIP).order_by(LocalIP.id):
-            wanted_rules += Rule.from_database_definition(policy_rule)
-            for rule in session.query(IPCorrelation).filter_by(local_ip=instance.id).order_by(IPCorrelation.id):
-                wanted_rules += Rule.from_database_definition(policy_rule, rule)
+            wanted_rules += Rule.from_database_definition(policy_rule) or []
+            for rule in session.query(IPCorrelation).filter_by(local_ip=policy_rule.id).order_by(IPCorrelation.id):
+                wanted_rules += Rule.from_database_definition(policy_rule, rule) or []
         wanted_rules = {
             r.key(): r for r in wanted_rules
         }
@@ -148,8 +148,15 @@ async def main():
         for k in current_rules.keys() - wanted_rules.keys():
             actions.append(current_rules[k].to_rule_deletion())
         for k in wanted_rules.keys() - current_rules.keys():
-            actions.append(current_rules[k].to_rule_append())
-        asyncio.sleep(10)
+            actions.append(wanted_rules[k].to_rule_append())
+        if actions:
+            print('Applying iptables diff')
+            for action in actions:
+                action = 'iptables '+action
+                print(action)
+                subprocess.Popen([action,], shell=True)
+            print('OK')
+        await asyncio.sleep(10)
         # TODO
         # destroy the rules when cancelled
 

@@ -1,11 +1,12 @@
 from flask import Flask
 from flask_httpauth import HTTPBasicAuth
 from flask import render_template
+from flask import request
 from werkzeug.security import generate_password_hash, check_password_hash
 from db.models import LocalIP, IPCorrelation, TREATMENT_CHOICES, DEFAULT_TREATMENT_CHOICES
 from db.session import create_session
-import ipwhois
 import json
+import subprocess
 
 app = Flask(__name__)
 auth = HTTPBasicAuth()
@@ -29,8 +30,13 @@ def index():
         rules = session.query(IPCorrelation).filter_by(local_ip=policy_rule.id).order_by(IPCorrelation.id)
         for rule in rules:
             if not rule.whois:
-                rule.whois = ipwhois.IPWhois(rule.ip).lookup_rdap()
+                p = subprocess.Popen(['whois', rule.remote_ip], stdout=subprocess.PIPE)
+                rule.whois = ""
+                with p.stdout:
+                    for line in iter(p.stdout.readline, b''):
+                        rule.whois += line.decode('utf-8')
                 session.query(IPCorrelation).filter_by(id=rule.id).update({"whois": rule.whois})
+                session.commit()
         rulesets.append({
             'local_ip': policy_rule,
             'rules': rules
@@ -45,11 +51,12 @@ def index():
 
 @app.route('/set_treatment')
 @auth.login_required
-def index():
+def set_treatment():
     session = create_session()
     id = request.args.get("id")
     treatment = request.args.get("treatment")
     ret=session.query(IPCorrelation).filter_by(id=id).update({"treatment": treatment})
+    session.commit()
     return json.dumps({'updated': ret})
 
 
@@ -60,6 +67,7 @@ def set_policy():
     id = request.args.get("id")
     policy = request.args.get("policy")
     ret=session.query(LocalIP).filter_by(id=id).update({"policy": policy})
+    session.commit()
     return json.dumps({'updated': ret})
 
 @app.route('/add_local_ip')
@@ -72,6 +80,7 @@ def add_local_ip():
         ip=ip,
         policy=policy
     ))
+    session.commit()
     return json.dumps({'added': ret})
 
 @app.route('/remove_local_ip')
@@ -80,6 +89,7 @@ def remove_local_ip():
     session = create_session()
     id = request.args.get("id")
     ret=session.query(LocalIP).filter_by(id=id).remove()
+    session.commit()
     return json.dumps({'removed':ret})
 
 if __name__ == '__main__':

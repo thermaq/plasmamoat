@@ -1,4 +1,6 @@
 sqlalchemy
+flask_httpauth
 alembic
 flask
 ipwhois
+psycopg2

@@ -1,0 +1,60 @@
+<html>
+    <head>
+        <title>PLASMAMOAT</title>
+    </head>
+    <body>
+        <h1>Hello</h1>
+        {% for ruleset in rulesets %}
+        <div>
+            <h2>
+            {{ ruleset.local_ip.ip}}
+            
+            </h2>
+            <form action="/set_policy" method="get">
+                <input type="hidden" name="id" value="{{ ruleset.local_ip.id }}"/>
+                <select name="policy" ochange="this.parentElement.submit()">
+                    {% for k,v in default_treatment_choices.items() %}
+                    <option value="{{k}}" {% if ruleset.local_ip.policy == k %}selected{% endif %}>{{v}}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            <form action="remove_local_ip" method="get">
+                <input type="hidden" name="id" value="{{ ruleset.local_ip.id }}"/>
+                <input type="submit" name="delete" value="delete"/>
+            </form>
+            <div>
+                {% for rule in ruleset.rules %}
+                    <div>
+                        <h4>
+                            {{ rule.remote_ip }}
+                        </h4>
+                        <form action="/set_treatment" method="get">
+                            <input type="hidden" name="id" value="{{ rule.id }}"/>
+                            <select name="treatment" onchange="this.parentElement.submit()">
+                                {% for k,v in treatment_choices.items() %}
+                                <option value="{{k}}" {% if rule.treatment == k %}selected{% endif %}>{{v}}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        {{ rule.whois_abridged }}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+        <div>
+            <form action="/add_local_ip" method="get">
+                <input name="ip">
+                <select name="policy">
+                    {% for k,v in default_treatment_choices.items() %}
+                    <option value="{{k}}" >{{v}}</option>
+                    {% endfor %}
+                </select>
+                <input type="submit" value="ok"/>
+            </form>
+        </div>
+    <script type="text/javascript">
+
+    </script>
+    </body>
+</html>

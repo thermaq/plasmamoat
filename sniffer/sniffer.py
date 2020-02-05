@@ -5,12 +5,19 @@ import time
 import threading
 import sys
 import asyncio
+import logging
+logger=logging.getLogger()
 
 
-DEVICE='eth1'
+#DEVICE='eth1'
+DEVICE='enp0s25'
 
 
-async def sniff(ip, stopper):
+async def readline(p):
+    return p.stdout.readline()
+
+
+async def sniff(ip):
     session = create_session()
     args = ["/usr/bin/sudo", "./sniffer/uniqtcpdump", DEVICE, ip.ip]
     print('Starting ', args)
@@ -22,8 +29,9 @@ async def sniff(ip, stopper):
         p.stdin.write(b"dadas")
         while True:
             try:
-                line = await asyncio.wait_for(p.stdout.readline(), 1)
-            except asyncio.TimeoutError:
+                line = await asyncio.wait_for(readline(p), 1)
+            except asyncio.TimeoutException:
+                logger.exception('timeout')
                 continue
             else:
                 if p.poll() != None or not line:
@@ -36,9 +44,11 @@ async def sniff(ip, stopper):
                         local_ip=ip.id,
                         remote_ip=line
                     ))
+                    session.commit()
                 else:
                     print('already in database')
     except asyncio.CancelledError:
+        logger.exception('We f\'d up')
         p.terminate()
         raise
 
@@ -46,6 +56,7 @@ async def sniff(ip, stopper):
 async def main():
     session = create_session()
     sniffers = {}
+    loop = asyncio.get_event_loop()
     while True:
         try:
             actual_sniffers = []
@@ -53,8 +64,7 @@ async def main():
                 actual_sniffers.append(instance.ip)
                 if instance.ip not in sniffers:
                     print('Starting sniffing ' + instance.ip)
-                    stopper = Stopper()
-                    sniffers[instance.ip] = asyncio.create_task(sniff(instance, stopper))
+                    sniffers[instance.ip] = loop.create_task(sniff(instance))
             for s in sniffers.keys() - actual_sniffers:
                 print('Stopping ' + s)
                 try:
@@ -72,7 +82,7 @@ async def main():
                     await v
                 except asyncio.CancelledError:
                     print('Stopped ' + k)
-
+        await asyncio.sleep(10)
 
 
 if __name__ == '__main__':
