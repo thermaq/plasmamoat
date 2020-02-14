@@ -6,12 +6,18 @@ import threading
 import sys
 import asyncio
 import logging
-logger=logging.getLogger()
+logger=logging.getLogger('sniffer')
 
+logger.setLevel(logging.INFO)
+# create file handler which logs even debug messages
+fh = logging.FileHandler('sniffer.log')
+fh.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
 
-#DEVICE='eth1'
-DEVICE='enp0s25'
-
+DEVICE='eth1'
+#DEVICE='enp0s25'
 
 async def readline(p):
     return p.stdout.readline()
@@ -24,8 +30,8 @@ async def sniff(ip):
     log = open('err_log.txt', 'a')
     p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log)
     try:
-        print('listening')
-        print(p.pid)
+        logger.info('listening')
+        logger.info(p.pid)
         p.stdin.write(b"dadas")
         while True:
             try:
@@ -37,16 +43,16 @@ async def sniff(ip):
                 if p.poll() != None or not line:
                     break
                 line = line.decode('utf-8').strip()
-                print(line)
+                logger.info(line)
                 if session.query(IPCorrelation).filter_by(local_ip=ip.id, remote_ip=line).scalar() is None:
-                    print('adding')
+                    logger.info('adding')
                     session.add(IPCorrelation(
                         local_ip=ip.id,
                         remote_ip=line
                     ))
                     session.commit()
                 else:
-                    print('already in database')
+                    logger.info('already in database')
     except asyncio.CancelledError:
         logger.exception('We f\'d up')
         p.terminate()
@@ -56,17 +62,17 @@ async def sniff(ip):
 async def main():
     session = create_session()
     sniffers = {}
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
     while True:
         try:
             actual_sniffers = []
             for instance in session.query(LocalIP).order_by(LocalIP.id):
                 actual_sniffers.append(instance.ip)
                 if instance.ip not in sniffers:
-                    print('Starting sniffing ' + instance.ip)
+                    logger.info('Starting sniffing ' + instance.ip)
                     sniffers[instance.ip] = loop.create_task(sniff(instance))
             for s in sniffers.keys() - actual_sniffers:
-                print('Stopping ' + s)
+                logger.info('Stopping ' + s)
                 try:
                     sniffers[s].cancel()
                     await v
@@ -75,13 +81,13 @@ async def main():
                 sniffers.pop(s)
             await asyncio.sleep(5*60)
         except KeyboardInterrupt:
-            print('Stopping sniffers...')
+            logger.info('Stopping sniffers...')
             for k,v in sniffers.items():
                 try:
                     v.cancel()
                     await v
                 except asyncio.CancelledError:
-                    print('Stopped ' + k)
+                    logger.info('Stopped ' + k)
         await asyncio.sleep(10)
 
 

@@ -6,10 +6,18 @@ import asyncio
 import sys
 from dataclasses import dataclass
 import argparse
+import logging
+logger = logging.getLogger('blocker')
 
+logger.setLevel(logging.INFO)
+# create file handler which logs even debug messages
+fh = logging.FileHandler('blocker.log')
+fh.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
 
-
-CHAIN = 'PLASMA-ISOLATION_STAGE'
+CHAIN = 'PLASMA-ISOLATION-STAGE'
 
 
 @dataclass
@@ -23,7 +31,7 @@ class Rule:
 
     def to_rule_deletion(self):
         if self.chain_forward:
-            return f'-D FORWARD -g {CHAIN}'
+            return f'-D FORWARD -j {CHAIN}'
         if self.chain_definition:
             return f'-X {CHAIN}'
         if self.original_rule:
@@ -34,7 +42,7 @@ class Rule:
         if self.chain_definition:
             return f"-N {CHAIN}"
         elif self.chain_forward:
-            return f"-A FORWARD -g {CHAIN}"
+            return f"-I FORWARD -j {CHAIN}"
         elif not self.from_t:
             return f"-A {CHAIN} -d {self.to} -j {self.policy}"
         elif not self.to:
@@ -53,15 +61,15 @@ class Rule:
                 chain = ss[1]
             elif ss[0] == '-N':
                 chain_definition = True
-            elif ss[0] == 'g':
-                if ss[1] == CHAIN and chain == 'FORWARD':
-                    chain_forward = True
             elif ss[0] == 'd':
                 to = ss[1]
             elif ss[0] == 's':
                 from_t = ss[1]
             elif ss[0] == 'j':
-                policy = ss[1]
+                if ss[1] == CHAIN and chain == 'FORWARD':
+                    chain_forward = True
+                else:
+                    policy = ss[1]
         if chain != CHAIN and not chain_definition and not chain_forward:
             return None
         return Rule(
@@ -121,41 +129,48 @@ class Rule:
         ])
 
 
-async def main():
+async def check():
     session = create_session()
     sniffers = {}
+    p = subprocess.Popen(['iptables', '-S'], stdout=subprocess.PIPE)
+    stdout, stderr = p.communicate()
+    current_rules = {}
+    for r in stdout.decode('utf-8').split('\n'):
+        rule = Rule.from_iptable_rule(r)
+        if rule:
+            current_rules[rule.key()] = rule
+    # get database rules
+    wanted_rules = [
+        Rule(chain_definition=True),
+        Rule(chain_forward=True)
+    ]
+    for policy_rule in session.query(LocalIP).order_by(LocalIP.id):
+        wanted_rules += Rule.from_database_definition(policy_rule) or []
+        for rule in session.query(IPCorrelation).filter_by(local_ip=policy_rule.id).order_by(IPCorrelation.id):
+            wanted_rules += Rule.from_database_definition(policy_rule, rule) or []
+    wanted_rules = {
+        r.key(): r for r in wanted_rules
+    }
+    actions = []
+    for k in current_rules.keys() - wanted_rules.keys():
+        actions.append(current_rules[k].to_rule_deletion())
+    for k in wanted_rules.keys() - current_rules.keys():
+        actions.append(wanted_rules[k].to_rule_append())
+    if actions:
+        logger.info('Applying iptables diff')
+        for action in actions:
+            action = 'iptables '+action
+            logger.info(action)
+            subprocess.Popen([action,], shell=True)
+        logger.info('OK')
+
+
+async def main():
     while True:
-        p = subprocess.Popen(['iptables', '-S'], stdout=subprocess.PIPE)
-        stdout, stderr = p.communicate()
-        current_rules = {}
-        for r in stdout.decode('utf-8').split('\n'):
-            rule = Rule.from_iptable_rule(r)
-            if rule:
-                current_rules[rule.key()] = rule
-        # get database rules
-        wanted_rules = [
-            Rule(chain_definition=True),
-            Rule(chain_forward=True)
-        ]
-        for policy_rule in session.query(LocalIP).order_by(LocalIP.id):
-            wanted_rules += Rule.from_database_definition(policy_rule) or []
-            for rule in session.query(IPCorrelation).filter_by(local_ip=policy_rule.id).order_by(IPCorrelation.id):
-                wanted_rules += Rule.from_database_definition(policy_rule, rule) or []
-        wanted_rules = {
-            r.key(): r for r in wanted_rules
-        }
-        actions = []
-        for k in current_rules.keys() - wanted_rules.keys():
-            actions.append(current_rules[k].to_rule_deletion())
-        for k in wanted_rules.keys() - current_rules.keys():
-            actions.append(wanted_rules[k].to_rule_append())
-        if actions:
-            print('Applying iptables diff')
-            for action in actions:
-                action = 'iptables '+action
-                print(action)
-                subprocess.Popen([action,], shell=True)
-            print('OK')
+        try:
+            await check()
+        except:
+            logger.exception('blocker exception')
         await asyncio.sleep(10)
         # TODO
         # destroy the rules when cancelled

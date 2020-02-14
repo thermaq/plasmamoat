@@ -26,7 +26,8 @@ def verify_password(username, password):
 def index():
     session = create_session()
     rulesets = []
-    for policy_rule in session.query(LocalIP).order_by(LocalIP.id):
+    rulesss = session.query(LocalIP).order_by(LocalIP.id).all()
+    for policy_rule in rulesss:
         rules = session.query(IPCorrelation).filter_by(local_ip=policy_rule.id).order_by(IPCorrelation.id)
         for rule in rules:
             if not rule.whois:
@@ -34,7 +35,10 @@ def index():
                 rule.whois = ""
                 with p.stdout:
                     for line in iter(p.stdout.readline, b''):
-                        rule.whois += line.decode('utf-8')
+                        try:
+                            rule.whois += line.decode('utf-8')
+                        except:
+                            rule.whois += "invalid utf-8\n"
                 session.query(IPCorrelation).filter_by(id=rule.id).update({"whois": rule.whois})
                 session.commit()
         rulesets.append({

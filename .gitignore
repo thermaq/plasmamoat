@@ -1,2 +1,5 @@
 *.pyc
 err_log.txt
+sniffer/uniqtcpdump
+blocker.log
+sniffer.log
