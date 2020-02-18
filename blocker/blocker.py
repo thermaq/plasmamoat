@@ -165,7 +165,7 @@ async def check():
         logger.info('OK')
 
 
-async def main():
+async def main(loop):
     while True:
         try:
             await check()

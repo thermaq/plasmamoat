@@ -24,11 +24,12 @@ async def readline(p):
 
 
 async def sniff(ip):
-    session = create_session()
     args = ["/usr/bin/sudo", "./sniffer/uniqtcpdump", DEVICE, ip.ip]
-    print('Starting ', args)
+    logger.info('Starting [' + '\',\''.join(args) + ']')
     log = open('err_log.txt', 'a')
     p = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log)
+    logger.info('starting postgres session')
+    session = create_session()
     try:
         logger.info('listening')
         logger.info(p.pid)
@@ -59,10 +60,10 @@ async def sniff(ip):
         raise
 
 
-async def main():
+async def main(loop):
     session = create_session()
     sniffers = {}
-    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     while True:
         try:
             actual_sniffers = []
@@ -71,6 +72,7 @@ async def main():
                 if instance.ip not in sniffers:
                     logger.info('Starting sniffing ' + instance.ip)
                     sniffers[instance.ip] = loop.create_task(sniff(instance))
+                    logger.info('Started sniffing ' + instance.ip)
             for s in sniffers.keys() - actual_sniffers:
                 logger.info('Stopping ' + s)
                 try:

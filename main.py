@@ -7,8 +7,8 @@ from multiprocessing import Process
 
 async def start_app():
     loop = asyncio.get_event_loop()
-    a=loop.create_task(sniffer.main())
-    b=loop.create_task(blocker.main())
+    a=loop.create_task(sniffer.main(loop))
+    b=loop.create_task(blocker.main(loop))
     await a
     await b
 
